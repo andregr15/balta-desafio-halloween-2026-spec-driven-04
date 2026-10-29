@@ -27,3 +27,102 @@ GET {{baseUrl}}/aZ3k9Qx
 
 ### Código inexistente (404)
 GET {{baseUrl}}/nao-existe
+
+### Criar URL curta com código customizado (201, code = balta-io)
+POST {{baseUrl}}/urls
+Content-Type: application/json
+
+{
+  "url": "https://balta.io",
+  "code": "balta-io"
+}
+
+### Código em branco gera código automático (201)
+POST {{baseUrl}}/urls
+Content-Type: application/json
+
+{
+  "url": "https://balta.io",
+  "code": "   "
+}
+
+### Navegar pelo código customizado (302 para a URL original)
+GET {{baseUrl}}/balta-io
+
+### Navegar com caixa diferente (302, ignora maiúsculas/minúsculas)
+GET {{baseUrl}}/BALTA-IO
+
+### Detalhes do código customizado (clicks aumenta a cada acesso)
+GET {{baseUrl}}/urls/balta-io
+
+### Código em uso (400, errors.code)
+POST {{baseUrl}}/urls
+Content-Type: application/json
+
+{
+  "url": "https://outro.com",
+  "code": "balta-io"
+}
+
+### Código em uso com caixa diferente (400, errors.code)
+POST {{baseUrl}}/urls
+Content-Type: application/json
+
+{
+  "url": "https://outro.com",
+  "code": "BALTA-IO"
+}
+
+### Código com formato inválido (400: espaço; teste também a/b e olá)
+POST {{baseUrl}}/urls
+Content-Type: application/json
+
+{
+  "url": "https://balta.io",
+  "code": "balta io"
+}
+
+### Código curto demais, 2 caracteres (400; 3 caracteres é aceito)
+POST {{baseUrl}}/urls
+Content-Type: application/json
+
+{
+  "url": "https://balta.io",
+  "code": "ab"
+}
+
+### Código longo demais, 16 caracteres (400; 15 caracteres é aceito)
+POST {{baseUrl}}/urls
+Content-Type: application/json
+
+{
+  "url": "https://balta.io",
+  "code": "abcdefghijklmnop"
+}
+
+### Código reservado (400; teste também URLS)
+POST {{baseUrl}}/urls
+Content-Type: application/json
+
+{
+  "url": "https://balta.io",
+  "code": "urls"
+}
+
+### Código com espaço nas pontas (400, não é aparado)
+POST {{baseUrl}}/urls
+Content-Type: application/json
+
+{
+  "url": "https://balta.io",
+  "code": " abc"
+}
+
+### URL inválida e código inválido juntos (400 com url e code)
+POST {{baseUrl}}/urls
+Content-Type: application/json
+
+{
+  "url": "isso-nao-e-uma-url",
+  "code": "!"
+}

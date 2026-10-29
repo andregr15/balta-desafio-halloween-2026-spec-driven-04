@@ -12,6 +12,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("Default")));
 
 builder.Services.AddSingleton<IShortCodeGenerator, ShortCodeGenerator>();
+builder.Services.AddSingleton<ICustomCodeValidator, CustomCodeValidator>();
 
 var app = builder.Build();
 

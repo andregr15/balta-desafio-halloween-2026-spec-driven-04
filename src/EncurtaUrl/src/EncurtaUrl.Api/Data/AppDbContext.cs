@@ -16,7 +16,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
             entity.Property(x => x.Code)
                 .IsRequired()
-                .HasMaxLength(32);
+                .HasMaxLength(32)
+                .UseCollation("NOCASE");
 
             entity.HasIndex(x => x.Code)
                 .IsUnique();

@@ -3,6 +3,7 @@ using EncurtaUrl.Api.Data;
 using EncurtaUrl.Api.Models;
 using EncurtaUrl.Api.Services;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace EncurtaUrl.Api.Endpoints;
@@ -31,26 +32,47 @@ public static class ShortUrlEndpoints
         CreateShortUrlRequest request,
         AppDbContext db,
         IShortCodeGenerator generator,
+        ICustomCodeValidator validator,
         HttpRequest http,
         CancellationToken ct)
     {
+        var errors = new Dictionary<string, string[]>();
+
         if (!IsValidUrl(request.Url))
+            errors["url"] = ["Informe uma URL absoluta válida, começando com http:// ou https://."];
+
+        // Código em branco é tratado como não informado
+        var customCode = !string.IsNullOrWhiteSpace(request.Code) ? request.Code : null;
+
+        if (customCode is not null)
         {
-            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
-            {
-                ["url"] = ["Informe uma URL absoluta válida, começando com http:// ou https://."]
-            });
+            var codeErrors = validator.Validate(customCode);
+            if (codeErrors.Length > 0)
+                errors["code"] = codeErrors;
         }
+
+        if (errors.Count > 0)
+            return TypedResults.ValidationProblem(errors);
 
         string? code = null;
 
-        for (var attempt = 0; attempt < MaxGenerationAttempts; attempt++)
+        if (customCode is not null)
         {
-            var candidate = generator.Generate();
-            if (!await db.ShortUrls.AnyAsync(x => x.Code == candidate, ct))
+            if (await db.ShortUrls.AnyAsync(x => EF.Functions.Collate(x.Code, "NOCASE") == customCode, ct))
+                return CodeInUse(customCode);
+
+            code = customCode;
+        }
+        else
+        {
+            for (var attempt = 0; attempt < MaxGenerationAttempts; attempt++)
             {
-                code = candidate;
-                break;
+                var candidate = generator.Generate();
+                if (!await db.ShortUrls.AnyAsync(x => EF.Functions.Collate(x.Code, "NOCASE") == candidate, ct))
+                {
+                    code = candidate;
+                    break;
+                }
             }
         }
 
@@ -68,7 +90,17 @@ public static class ShortUrlEndpoints
         };
 
         db.ShortUrls.Add(shortUrl);
-        await db.SaveChangesAsync(ct);
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (customCode is not null
+            && ex.InnerException is SqliteException { SqliteErrorCode: 19, SqliteExtendedErrorCode: 2067 })
+        {
+            // Corrida: outra requisição gravou o mesmo código entre a checagem e o SaveChanges
+            return CodeInUse(customCode);
+        }
 
         var response = ToResponse(shortUrl, http);
         return TypedResults.Created($"/urls/{shortUrl.Code}", response);
@@ -95,7 +127,7 @@ public static class ShortUrlEndpoints
     {
         var shortUrl = await db.ShortUrls
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Code == code, ct);
+            .FirstOrDefaultAsync(x => EF.Functions.Collate(x.Code, "NOCASE") == code, ct);
 
         return shortUrl is null
             ? TypedResults.NotFound()
@@ -107,7 +139,7 @@ public static class ShortUrlEndpoints
         AppDbContext db,
         CancellationToken ct)
     {
-        var shortUrl = await db.ShortUrls.FirstOrDefaultAsync(x => x.Code == code, ct);
+        var shortUrl = await db.ShortUrls.FirstOrDefaultAsync(x => EF.Functions.Collate(x.Code, "NOCASE") == code, ct);
 
         if (shortUrl is null)
             return TypedResults.NotFound();
@@ -117,6 +149,12 @@ public static class ShortUrlEndpoints
 
         return TypedResults.Redirect(shortUrl.OriginalUrl);
     }
+
+    private static ValidationProblem CodeInUse(string code)
+        => TypedResults.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["code"] = [$"O código '{code}' já está em uso."]
+        });
 
     private static bool IsValidUrl(string? url)
         => Uri.TryCreate(url, UriKind.Absolute, out var uri)
